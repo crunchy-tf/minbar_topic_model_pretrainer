@@ -1,0 +1,7 @@
+wikiextractor==3.0.6 # Or latest compatible
+sentence-transformers>=2.2.0
+bertopic[visualization]>=0.15.0 # [visualization] is optional but useful for inspecting topics
+pandas>=1.3.0
+loguru>=0.7.0
+# torch (usually installed as a dependency)
+# tqdm (often used by these libraries for progress bars)
