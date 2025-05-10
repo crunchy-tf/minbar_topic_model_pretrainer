@@ -13,7 +13,7 @@ WIKIPEDIA_EXTRACTED_DIR = os.path.join(WORKING_DIR, "wikipedia_extracted_raw") #
 FILTERED_WIKIPEDIA_TEXT_DIR = os.path.join(WORKING_DIR, "wikipedia_filtered_texts") # Health-relevant texts
 
 # List of language codes for Wikipedia processing
-LANGUAGES_TO_PROCESS = ["en", "fr"] # English, French, Arabic
+LANGUAGES_TO_PROCESS = ["en"] # English, French
 
 # --- SBERT Model ---
 SBERT_MODEL_NAME = "paraphrase-multilingual-mpnet-base-v2"
