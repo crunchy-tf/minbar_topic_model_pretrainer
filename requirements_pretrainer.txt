@@ -1,11 +1,7 @@
-# Comment out or remove the old wikiextractor
+# In requirements_pretrainer.txt (on your local machine)
+# Comment out or remove both wikiextractor lines:
 # wikiextractor==3.0.6
-
-# Add the line to install WikiExtractor V2 from its Git repository
-# YOU MUST REPLACE 'https://github.com/someuser/WikiExtractorV2.git' WITH THE ACTUAL URL OF THE FORK
-git+https://github.com/langtech-bsc/Wikiextractor-V2.git
-# Common forks often still register under the name 'wikiextractor' for compatibility.
-# If the fork uses a different package name (e.g., 'wikiextractorv2'), adjust #egg= accordingly.
+# git+https://github.com/langtech-bsc/Wikiextractor-V2.git#egg=wikiextractor 
 
 sentence-transformers>=2.2.0
 bertopic[visualization]>=0.15.0
