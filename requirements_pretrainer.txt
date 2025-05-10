@@ -1,15 +1,13 @@
-# In C:\Users\ayoub\Desktop\minbar_services\topic_model_pretrainer\requirements_pretrainer.txt
-
 sentence-transformers>=2.2.0
-bertopic[visualization]>=0.15.0
+bertopic[visualization]>=0.15.0 # [visualization] is optional but useful for inspecting topics
 pandas>=1.3.0
 loguru>=0.7.0
 requests # For wikipedia_downloader.py
-
-# Dependencies from WikiExtractorV2 fork
-Babel>=2.9.0  # Or whatever version its reqs.txt has
-pylatexenc>=2.10 # Or whatever version its reqs.txt has
-beautifulsoup4>=4.9.0 # ADDED - check fork's reqs.txt for version
+gensim>=4.0.0 # ADDED for Wikipedia parsing
 
 # For CPU-only PyTorch
 torch>=2.0.0 --index-url https://download.pytorch.org/whl/cpu
+# torchvision --index-url https://download.pytorch.org/whl/cpu # Optional
+# torchaudio --index-url https://download.pytorch.org/whl/cpu  # Optional
+
+# Removed: wikiextractor, Babel, pylatexenc, beautifulsoup4 (unless used elsewhere, unlikely)

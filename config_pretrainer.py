@@ -1,64 +1,60 @@
 # topic_model_pretrainer_cloud/config_pretrainer.py
 import os
+from health_topics_data import HEALTH_TOPICS_KEYWORDS # Import for convenience
 
 # --- General Paths ---
-# BASE_PROJECT_DIR should be the root of your 'topic_model_pretrainer' cloned repository
-BASE_PROJECT_DIR = os.path.abspath(os.path.dirname(__file__)) # Corrected: directory of this config file
-WORKING_DIR = os.path.join(BASE_PROJECT_DIR, "pretrainer_workspace") # For all intermediate files
+BASE_PROJECT_DIR = os.path.abspath(os.path.dirname(__file__)) # Root of this pretrainer project
+WORKING_DIR = os.path.join(BASE_PROJECT_DIR, "pretrainer_workspace")
 
 # --- Wikipedia Data Paths ---
 WIKIPEDIA_DUMP_DIR = os.path.join(WORKING_DIR, "wikipedia_dumps")
-WIKIPEDIA_EXTRACTED_DIR = os.path.join(WORKING_DIR, "wikipedia_extracted_raw_v2")
-FILTERED_WIKIPEDIA_TEXT_DIR = os.path.join(WORKING_DIR, "wikipedia_filtered_texts_v2")
+WIKIPEDIA_GENSIM_EXTRACTED_TEXT_DIR = os.path.join(WORKING_DIR, "wikipedia_gensim_extracted")
+FILTERED_WIKIPEDIA_TEXT_DIR = os.path.join(WORKING_DIR, "wikipedia_filtered_texts_gensim")
 
-# List of language codes for Wikipedia processing
-LANGUAGES_TO_PROCESS = ["en"] # Only English for now
+LANGUAGES_TO_PROCESS = ["en"] # Focusing on English
 
 # --- SBERT Model ---
 SBERT_MODEL_NAME = "paraphrase-multilingual-mpnet-base-v2"
 SBERT_MODEL_SAVE_PATH = os.path.join(WORKING_DIR, "sbert_model")
 
-# --- BERTopic ---
-# Stage 1 (Optional Base Model)
-BASE_WIKI_BERTOPIC_MODEL_DIR = os.path.join(WORKING_DIR, "bertopic_model_base_wikipedia_v2")
-BASE_WIKI_BERTOPIC_MODEL_FILENAME = "bertopic_model_base_wikipedia_v2.joblib"
-BASE_WIKI_BERTOPIC_FULL_PATH = os.path.join(BASE_WIKI_BERTOPIC_MODEL_DIR, BASE_WIKI_BERTOPIC_MODEL_FILENAME)
-
-WIKIPEDIA_ARTICLES_PER_LANGUAGE_LIMIT = 50000
-STAGE1_BERTOPIC_MIN_TOPIC_SIZE = 50
-STAGE1_BERTOPIC_NR_TOPICS = "auto"
-
-# Stage 2 / Final Model
-FINAL_BERTOPIC_OUTPUT_DIR = os.path.join(WORKING_DIR, "bertopic_model_final_output_v2")
-FINAL_BERTOPIC_MODEL_FILENAME = "bertopic_model_final_guided_v2.joblib"
+# --- BERTopic Model Output ---
+# Final Model (Trained on filtered Wikipedia, Guided by HEALTH_TOPICS from health_topics_data.py)
+FINAL_BERTOPIC_OUTPUT_DIR = os.path.join(WORKING_DIR, "bertopic_model_final_output_gensim")
+FINAL_BERTOPIC_MODEL_FILENAME = "bertopic_model_final_guided_gensim.joblib"
 FINAL_BERTOPIC_FULL_PATH = os.path.join(FINAL_BERTOPIC_OUTPUT_DIR, FINAL_BERTOPIC_MODEL_FILENAME)
 
-STAGE2_BERTOPIC_MIN_TOPIC_SIZE = 25
-STAGE2_BERTOPIC_NR_TOPICS = None
+# BERTopic training parameters
+WIKIPEDIA_ARTICLES_PER_LANGUAGE_LIMIT = 50000 # Max *filtered* articles to load for BERTopic training
+BERTOPIC_MIN_TOPIC_SIZE = 20 # Min documents to form a topic (adjust based on filtered data size)
+BERTOPIC_NR_TOPICS = None    # 'auto', or an integer, or len(HEALTH_TOPICS_KEYWORDS)
 
 SEED_KEYWORD_MIN_LEN = 3
-SEED_MAX_KEYWORDS_PER_TOPIC = 7
+SEED_MAX_KEYWORDS_PER_TOPIC = 7 # Max seed keywords per HEALTH_TOPIC
 
-# --- WikiExtractor V2 settings ---
-WIKIEXTRACTOR_PROCESSES = 4
-WIKIEXTRACTOR_BYTES_PER_CHUNK = "500M"
-WIKIEXTRACTOR_TEMPLATES_DIR = os.path.join(WIKIPEDIA_EXTRACTED_DIR, "templates_cache")
+# --- Filtering settings for Wikipedia articles (using gensim output) ---
+# This dictionary maps keys from your HEALTH_TOPICS_KEYWORDS to lists of
+# keywords that will be searched for within the article text.
+# YOU MUST POPULATE THIS COMPREHENSIVELY FOR 'en'.
+HEALTH_CATEGORIES_KEYWORDS_EN: dict[str, list[str]] = {
+    # Example: if HEALTH_TOPICS_KEYWORDS has "symptoms_general": "general systemic ..."
+    "symptoms_general": ["general", "systemic", "fatigue", "malaise", "weakness", "weight change", "appetite change", "night sweat"],
+    "symptoms_fever_temperature": ["fever", "high temperature", "hypothermia", "chill", "shivering", "temperature"],
+    "disease_covid19": ["covid-19", "covid", "omicron", "long covid", "pasc", "coronavirus", "sars-cov-2", "pandemic"],
+    "public_health_vaccination_general": ["vaccine", "vaccination", "immunization", "jab", "shot", "vaccinate"],
+    "mental_health_symptoms_anxiety": ["anxiety", "worry", "nervousness", "panic attack", "stress"],
+    # !!! IMPORTANT !!!
+    # Add entries here for ALL keys present in your health_topics_data.HEALTH_TOPICS_KEYWORDS
+    # For each key, provide a list of 5-15 strong, relevant English keywords.
+    # Example for another key:
+    # "disease_influenza_seasonal": ["influenza", "flu", "seasonal flu", "h1n1", "h3n2", "grippe"],
+    # "health_system_capacity_hospitals": ["hospital", "bed availability", "icu", "emergency room", "overcrowding", "wait time"],
+}
 
-# --- Filtering settings for Wikipedia articles ---
-HEALTH_CATEGORIES_FILTER_EN = [
-    "medicine", "public health", "diseases and disorders", "pharmacology", "epidemiology",
-    "mental health", "viruses", "bacteria", "pandemics", "vaccines", "symptoms", "nutrition",
-    "human anatomy", "physiology", "toxicology", "medical specialties", "health care", "health organizations"
-]
-# HEALTH_CATEGORIES_FILTER_FR = [] # Kept commented out or removed
-# HEALTH_CATEGORIES_FILTER_AR = [] # Kept commented out or removed
-
+# Fallback general keywords (lowercase)
 GENERAL_HEALTH_KEYWORDS_FILTER = [
     "health", "medical", "disease", "symptom", "illness", "clinic", "hospital", "doctor",
     "pharma", "vaccin", "epidemic", "pandemic", "virus", "bacteria", "infection", "outbreak",
-    "santé", "médical", "maladie", "symptôme", "clinique", "hôpital", "docteur", "médecin",
-    "pharmaceutique", "épidémie", "pandémie", "infection", "foyer de maladie",
-    "صحة", "طبي", "مرض", "عرض", "مستشفى", "طبيب", "دواء", "صيدلية",
-    "لقاح", "وباء", "جائحة", "عدوى", "فيروس", "بكتيريا", "تفشي"
+    "patient", "treatment", "care", "public health", "cdc", "who", "moh", # Common orgs
+    "mortality", "morbidity", "surveillance", "prevention", "control measures"
 ]
-MIN_FILTERED_ARTICLE_LENGTH = 250
+MIN_FILTERED_ARTICLE_LENGTH = 200 # Min characters for a filtered article to be kept

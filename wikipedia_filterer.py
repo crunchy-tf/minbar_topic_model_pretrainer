@@ -1,204 +1,156 @@
 # topic_model_pretrainer_cloud/wikipedia_filterer.py
 import os
-import glob
-import json
 import re
 from loguru import logger
-from typing import List, Dict, Optional # Keep these for good practice
+from typing import List, Dict, Optional
 
-# Import only what's guaranteed to be in config_pretrainer.py
-# when processing only English, or what's generally needed.
 from config_pretrainer import (
-    WIKIPEDIA_EXTRACTED_DIR,
-    FILTERED_WIKIPEDIA_TEXT_DIR,
-    LANGUAGES_TO_PROCESS,       # This will determine which categories are looked up
-    HEALTH_CATEGORIES_FILTER_EN,# Required if "en" is in LANGUAGES_TO_PROCESS
-    # If you decide to process FR or AR later, you'd un-comment their
-    # category filter definitions in config_pretrainer.py and then this script
-    # would pick them up via get_health_categories_for_lang.
+    WIKIPEDIA_GENSIM_EXTRACTED_TEXT_DIR, # Input for this script
+    FILTERED_WIKIPEDIA_TEXT_DIR,         # Output for this script
+    LANGUAGES_TO_PROCESS,
+    # These will be dictionaries of {'topic_key': ['kw1', 'kw2']}
+    HEALTH_CATEGORIES_KEYWORDS_EN,
     GENERAL_HEALTH_KEYWORDS_FILTER,
     MIN_FILTERED_ARTICLE_LENGTH
 )
-# Attempt to import FR and AR category filters, but don't fail if they're not there
-# This allows config_pretrainer.py to only define what's actively being processed.
-try:
-    from config_pretrainer import HEALTH_CATEGORIES_FILTER_FR
-except ImportError:
-    HEALTH_CATEGORIES_FILTER_FR = [] # Default to empty if not defined
-try:
-    from config_pretrainer import HEALTH_CATEGORIES_FILTER_AR
-except ImportError:
-    HEALTH_CATEGORIES_FILTER_AR = [] # Default to empty if not defined
+from wikipedia_parser import ARTICLE_SEPARATOR # Import the separator used by gensim parser
+
+# Attempt to import FR and AR keyword dictionaries if they might be defined in config
+try: from config_pretrainer import HEALTH_CATEGORIES_KEYWORDS_FR
+except ImportError: HEALTH_CATEGORIES_KEYWORDS_FR = {}
+try: from config_pretrainer import HEALTH_CATEGORIES_KEYWORDS_AR
+except ImportError: HEALTH_CATEGORIES_KEYWORDS_AR = {}
 
 
-def get_health_categories_for_lang(lang_code: str) -> list:
-    """
-    Returns the appropriate health category filter list for the given language code.
-    Relies on constants being defined in config_pretrainer.py if that language is active.
-    """
-    if lang_code == "en":
-        # HEALTH_CATEGORIES_FILTER_EN is imported directly and must exist if 'en' is processed
-        return HEALTH_CATEGORIES_FILTER_EN
-    elif lang_code == "fr":
-        # HEALTH_CATEGORIES_FILTER_FR is imported via try-except
-        return HEALTH_CATEGORIES_FILTER_FR
-    elif lang_code == "ar":
-        # HEALTH_CATEGORIES_FILTER_AR is imported via try-except
-        return HEALTH_CATEGORIES_FILTER_AR
-    else:
-        logger.warning(f"No specific health category filter list configured for language code: '{lang_code}'. "
-                       "Relevance check will rely more on general keywords for this language if processed.")
-        return []
+def get_health_keywords_dict_for_lang(lang_code: str) -> Dict[str, List[str]]:
+    """Returns the health topic keyword dictionary for the language."""
+    if lang_code == "en": return HEALTH_CATEGORIES_KEYWORDS_EN
+    if lang_code == "fr": return HEALTH_CATEGORIES_KEYWORDS_FR
+    if lang_code == "ar": return HEALTH_CATEGORIES_KEYWORDS_AR
+    logger.warning(f"No specific health keyword dictionary defined for lang '{lang_code}' in config_pretrainer.py.")
+    return {}
 
+def check_article_relevance_by_keywords(
+    article_full_text: str, # Gensim provides full text, title might be first line
+    lang_health_keywords_dict: Dict[str, List[str]],
+    general_health_keywords: List[str]
+) -> bool:
+    """
+    Checks relevance by searching for keywords within the article text.
+    """
+    if not article_full_text.strip():
+        return False
+        
+    text_lower = article_full_text.lower()
 
-def check_article_relevance(title: str, text_content: str, categories_from_json: List[str],
-                              lang_health_categories: List[str]) -> bool:
-    """
-    Checks if an article is relevant based on explicit categories or keywords in title/text.
-    'lang_health_categories' is the specific list for the current language being processed.
-    """
-    # 1. Check explicit categories first (most reliable if wikiextractor provides them well)
-    if categories_from_json and lang_health_categories: # Only check if we have categories for this lang
-        normalized_json_cats = {cat.lower().strip() for cat in categories_from_json}
-        for health_cat_phrase in lang_health_categories:
-            # health_cat_phrase is a string from your config list, e.g., "public health"
-            if health_cat_phrase.lower() in normalized_json_cats: # Exact match
-                logger.trace(f"Relevant by category (exact match): '{health_cat_phrase}' in article categories for title '{title}'")
-                return True
-            # Optional: Broader check for keywords within category phrases
-            # for health_keyword in health_cat_phrase.split():
-            #     if len(health_keyword) > 2: # Avoid very short "keywords"
-            #         for article_cat_tokenized in normalized_json_cats:
-            #             if health_keyword in article_cat_tokenized.split(): # Check against tokenized article cats
-            #                 logger.trace(f"Relevant by category (keyword substring): '{health_keyword}' in article category '{article_cat_tokenized}' for title '{title}'")
-            #                 return True
+    # Check against specific health category keywords from HEALTH_CATEGORIES_KEYWORDS_XX
+    if lang_health_keywords_dict:
+        for category_key, keywords_for_category in lang_health_keywords_dict.items():
+            for keyword in keywords_for_category:
+                # Use regex for whole word matching to avoid partial matches within larger words
+                # \b ensures word boundaries. re.escape handles special characters in keyword.
+                if re.search(r'\b' + re.escape(keyword.lower()) + r'\b', text_lower):
+                    logger.trace(f"Relevant by specific keyword: '{keyword}' (from category '{category_key}')")
+                    return True
     
-    # 2. Fallback: Check title and first ~500 chars of text for general health keywords
-    # This helps if category information from wikiextractor is sparse or poorly parsed,
-    # or if no specific lang_health_categories were provided.
-    search_corpus = (title + " " + text_content[:500]).lower()
-    for keyword in GENERAL_HEALTH_KEYWORDS_FILTER:
-        # GENERAL_HEALTH_KEYWORDS_FILTER can contain keywords from all languages
-        if keyword.lower() in search_corpus:
-            logger.trace(f"Relevant by general keyword: '{keyword}' in title/text for title '{title}'")
+    # Fallback to general health keywords
+    for general_keyword in general_health_keywords:
+        if re.search(r'\b' + re.escape(general_keyword.lower()) + r'\b', text_lower):
+            logger.trace(f"Relevant by general keyword: '{general_keyword}'")
             return True
             
     return False
 
-
-def clean_wiki_text(text: str) -> str:
-    """Basic cleaning of extracted Wikipedia text."""
-    # Remove residual MediaWiki section headings (e.g., == Section ==, === Sub-section ===)
-    text = re.sub(r'^=+\s*(.*?)\s*=+\s*$', '', text, flags=re.MULTILINE)
-    text = re.sub(r'\[\[Category:.*?\]\]', '', text) # Remove category tags if still present
-    # Remove newlines that are not paragraph breaks (heuristics)
-    text = re.sub(r'\n{2,}', '\n', text) # Keep paragraph breaks (becomes single \n)
-    text = re.sub(r'(?<!\n)\n(?!\n)', ' ', text) # Replace single newlines (likely mid-sentence) with space
-    text = re.sub(r'\s{2,}', ' ', text).strip() # Normalize multiple spaces
+def simple_clean_text_for_filtering(text: str) -> str:
+    """Basic cleaning, primarily for length check and reducing noise before keyword search."""
+    text = re.sub(r'<[^>]+>', ' ', text) # Remove any lingering HTML-like tags
+    text = re.sub(r'\s+', ' ', text).strip()
     return text
 
-
 def filter_articles_for_language(lang_code: str):
-    input_lang_dir = os.path.join(WIKIPEDIA_EXTRACTED_DIR, lang_code)
-    output_lang_dir = os.path.join(FILTERED_WIKIPEDIA_TEXT_DIR, lang_code)
-    os.makedirs(output_lang_dir, exist_ok=True)
+    input_gensim_file = os.path.join(WIKIPEDIA_GENSIM_EXTRACTED_TEXT_DIR, lang_code, f"{lang_code}_gensim_extracted_articles.txt")
+    output_lang_filtered_dir = os.path.join(FILTERED_WIKIPEDIA_TEXT_DIR, lang_code)
+    os.makedirs(output_lang_filtered_dir, exist_ok=True)
 
-    if not os.path.isdir(input_lang_dir):
-        logger.warning(f"Input directory for extracted text not found for language '{lang_code}': {input_lang_dir}")
-        return 0 # No articles to process
+    if not os.path.exists(input_gensim_file):
+        logger.warning(f"Gensim parsed text file not found for language '{lang_code}': {input_gensim_file}")
+        return 0
 
-    logger.info(f"Filtering relevant articles for language '{lang_code}' from '{input_lang_dir}'")
+    logger.info(f"Filtering relevant articles for language '{lang_code}' from gensim output: '{input_gensim_file}'")
     
-    # Get the specific category list for the current language
-    health_categories_for_this_lang = get_health_categories_for_lang(lang_code)
-    if not health_categories_for_this_lang:
-        logger.warning(f"No specific health category filters found for language '{lang_code}' in config. "
-                       "Filtering will rely solely on GENERAL_HEALTH_KEYWORDS_FILTER for this language.")
+    specific_lang_health_keywords_dict = get_health_keywords_dict_for_lang(lang_code)
+    if not specific_lang_health_keywords_dict:
+        logger.warning(f"No specific health keyword dictionary found for lang '{lang_code}'. "
+                       "Filtering will rely solely on GENERAL_HEALTH_KEYWORDS_FILTER.")
 
-    total_files_processed = 0
-    relevant_articles_found = 0
+    articles_processed_count = 0
+    relevant_articles_saved_count = 0
 
-    # WikiExtractorV2 output is often nested (e.g., AA/wiki_00, AB/wiki_01)
-    for root, dirs, files in os.walk(input_lang_dir):
-        for filename in files:
-            # Process only files that look like WikiExtractor output (e.g., "wiki_XX")
-            # This check might need adjustment based on actual WikiExtractorV2 output filenames
-            if not filename.startswith("wiki_"): 
-                continue
-
-            filepath = os.path.join(root, filename)
-            total_files_processed += 1
-            if total_files_processed % 500 == 0: # Log progress less frequently for file iteration
-                logger.debug(f"[{lang_code}] Scanned {total_files_processed} input files from WikiExtractor output...")
+    try:
+        with open(input_gensim_file, 'r', encoding='utf-8') as f_in:
+            content = f_in.read()
+            articles_data = content.split(ARTICLE_SEPARATOR)
             
-            try:
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    for line_number, line in enumerate(f):
-                        try:
-                            data = json.loads(line) # Expecting JSONL format from WikiExtractorV2 with --json
-                            article_id = data.get("id", f"unknownid_{relevant_articles_found}")
-                            title = data.get("title", "")
-                            text_content = data.get("text", "")
-                            
-                            # How WikiExtractorV2 --json outputs categories needs to be confirmed.
-                            # The README mentions "doc_id,title,url,languages,text" for --generator.
-                            # For non-generator --json, it might be a "categories": [...] field.
-                            # Assuming it's a list in a "categories" field for now.
-                            # If not, this part will need adjustment after inspecting V2's JSON output.
-                            categories_from_json = data.get("categories", []) 
-                            if not isinstance(categories_from_json, list): 
-                                categories_from_json = []
+            logger.info(f"[{lang_code}] Processing approximately {len(articles_data)} articles from gensim output file.")
 
-                            if text_content and len(text_content) >= MIN_FILTERED_ARTICLE_LENGTH:
-                                if check_article_relevance(title, text_content, categories_from_json, health_categories_for_this_lang):
-                                    relevant_articles_found += 1
-                                    cleaned_text = clean_wiki_text(text_content)
-                                    
-                                    # Ensure article_id is filesystem-safe
-                                    safe_article_id = re.sub(r'[^\w\.-]', '_', str(article_id))
-                                    out_filename = os.path.join(output_lang_dir, f"{lang_code}_{safe_article_id}.txt")
-                                    
-                                    with open(out_filename, 'w', encoding='utf-8') as out_f:
-                                        out_f.write(title + "\n\n" + cleaned_text)
-                                    
-                                    if relevant_articles_found % 200 == 0: # Log progress for found articles
-                                        logger.info(f"[{lang_code}] Found and saved {relevant_articles_found} health-relevant articles so far.")
-                        except json.JSONDecodeError:
-                            logger.trace(f"Skipping non-JSON line in {filepath}:{line_number+1}")
-                            continue
-                        except Exception as e_line:
-                            logger.warning(f"Error processing line in {filepath}:{line_number+1} - {e_line}")
-                            continue
-            except Exception as e_file:
-                logger.error(f"Could not process file {filepath}: {e_file}")
+            for i, article_text_raw in enumerate(articles_data):
+                articles_processed_count = i + 1
+                if not article_text_raw.strip():
+                    continue
+
+                # Heuristic: assume first non-empty line is title, rest is body
+                lines = article_text_raw.strip().split('\n', 1)
+                title_heuristic = lines[0].strip()
+                body_text = lines[1].strip() if len(lines) > 1 else ""
+                if not body_text: # If only title was found, use title as body for filtering
+                    body_text = title_heuristic
+                
+                # Use the full article text (title + body) for relevance check and length check
+                full_text_for_check = title_heuristic + " " + body_text
+                cleaned_for_length_check = simple_clean_text_for_filtering(full_text_for_check)
+
+                if len(cleaned_for_length_check) >= MIN_FILTERED_ARTICLE_LENGTH:
+                    if check_article_relevance_by_keywords(full_text_for_check, 
+                                                           specific_lang_health_keywords_dict, 
+                                                           GENERAL_HEALTH_KEYWORDS_FILTER):
+                        relevant_articles_saved_count += 1
+                        
+                        # Save the relevant article (title heuristic + body)
+                        out_filename = os.path.join(output_lang_filtered_dir, f"{lang_code}_article_{relevant_articles_saved_count}.txt")
+                        with open(out_filename, 'w', encoding='utf-8') as out_f:
+                            out_f.write(title_heuristic + "\n\n" + body_text) 
+                        
+                        if relevant_articles_saved_count % 200 == 0:
+                            logger.info(f"[{lang_code}] Saved {relevant_articles_saved_count} health-relevant articles.")
+                
+                if articles_processed_count % 10000 == 0: # Log progress every 10k articles processed
+                    logger.debug(f"[{lang_code}] Filtered {articles_processed_count} articles from gensim output...")
+
+    except Exception as e_file:
+        logger.error(f"Error processing gensim output file {input_gensim_file}: {e_file}", exc_info=True)
     
-    logger.info(f"Finished filtering for '{lang_code}'. Total relevant articles found and saved: {relevant_articles_found} "
-                f"from {total_files_processed} WikiExtractor output files scanned.")
-    return relevant_articles_found
+    logger.info(f"Finished filtering for '{lang_code}'. Total relevant articles saved: {relevant_articles_saved_count} "
+                f"from {articles_processed_count} processed articles.")
+    return relevant_articles_saved_count
 
 def filter_all_extracted_wikipedia():
-    logger.info("Starting filtering of all extracted Wikipedia articles for health relevance...")
+    logger.info("Starting filtering of all (gensim) extracted Wikipedia articles for health relevance...")
     os.makedirs(FILTERED_WIKIPEDIA_TEXT_DIR, exist_ok=True)
     total_relevant_across_all_langs = 0
 
-    # LANGUAGES_TO_PROCESS will now correctly reflect what's in config (e.g., just ["en"])
-    for lang_code in LANGUAGES_TO_PROCESS:
+    for lang_code in LANGUAGES_TO_PROCESS: # This will be ["en"] from current config
         total_relevant_across_all_langs += filter_articles_for_language(lang_code)
     
     if total_relevant_across_all_langs > 0:
-        logger.success(f"Filtering complete. Total health-relevant articles saved across all processed languages: {total_relevant_across_all_langs}")
+        logger.success(f"Filtering complete. Total health-relevant articles saved: {total_relevant_across_all_langs}")
     else:
-        logger.warning("Filtering complete, but no health-relevant articles were found or saved for the processed languages. "
-                       "Check configurations, WikiExtractor output, and category filter lists.")
+        logger.warning("Filtering complete, but no health-relevant articles found/saved. "
+                       "Check HEALTH_CATEGORIES_KEYWORDS_XX in config and gensim output quality.")
     return total_relevant_across_all_langs > 0
 
-
 if __name__ == "__main__":
-    # For standalone testing of this filterer module
-    # Ensure config_pretrainer.py is set up, esp. LANGUAGES_TO_PROCESS and category lists.
-    # Ensure WikiExtractorV2 has run and populated WIKIPEDIA_EXTRACTED_DIR/[lang_code]
-    logger.info("Testing wikipedia_filterer.py standalone...")
+    logger.info("Testing wikipedia_filterer.py (gensim version) standalone...")
     if filter_all_extracted_wikipedia():
-        logger.info("Wikipedia filterer module test finished successfully (found relevant articles).")
+        logger.info("Gensim Wikipedia filterer module test finished successfully.")
     else:
-        logger.warning("Wikipedia filterer module test completed, but no relevant articles were found/saved.")
+        logger.warning("Gensim Wikipedia filterer module test completed, but no relevant articles found/saved.")
