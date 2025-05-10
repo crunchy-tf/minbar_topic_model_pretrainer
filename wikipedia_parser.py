@@ -25,25 +25,31 @@ def extract_text_with_gensim(lang_code: str, dump_file_path: str, output_dir_for
     logger.info(f"Starting gensim extraction for '{lang_code}' from '{dump_file_path}'")
     logger.info(f"Output will be saved to: {output_text_file}")
 
-    if os.path.exists(output_text_file) and os.path.getsize(output_text_file) > 1024 * 1024: # Skip if > 1MB
-        logger.info(f"Gensim output file '{output_text_file}' for '{lang_code}' already exists and is non-trivial. Skipping extraction.")
+    # Check if output file already exists and is reasonably sized to allow skipping
+    if os.path.exists(output_text_file) and os.path.getsize(output_text_file) > 1024 * 1024: # e.g., > 1MB
+        logger.info(f"Gensim output file '{output_text_file}' for '{lang_code}' already exists and is non-trivial. "
+                      "Skipping extraction. Delete file to re-extract.")
         return True
     
     try:
-        # dictionary={} to not build one now. lemmatize=False. lower=False to keep original case for now.
-        wiki_corpus = WikiCorpus(dump_file_path, lemmatize=False, dictionary={}, lower=False)
+        # MODIFIED LINE: Removed lemmatize=False as it's no longer supported
+        # dictionary={} means don't build a dictionary during this pass.
+        # lower=False to preserve casing initially (cleaning/lowering can happen later if needed).
+        wiki_corpus = WikiCorpus(dump_file_path, dictionary={}, lower=False) 
         
         article_count = 0
         with open(output_text_file, 'w', encoding='utf-8') as f_out:
-            for article_tokens in wiki_corpus.get_texts(): # list of tokens (words) for each article
-                article_text = " ".join(article_tokens) # Reconstruct article text
+            # get_texts() yields a list of tokens (words) for each article.
+            for article_tokens in wiki_corpus.get_texts():
+                # Reconstruct the article text by joining tokens.
+                article_text = " ".join(article_tokens)
                 
                 # Basic check to avoid writing tiny fragments if gensim produces them
-                if len(article_text.strip()) > 50: # Arbitrary small length
+                if len(article_text.strip()) > 50: # Arbitrary small length to ensure some content
                     f_out.write(article_text.strip() + ARTICLE_SEPARATOR)
                     article_count += 1
                 
-                if article_count > 0 and article_count % 20000 == 0: # Log progress
+                if article_count > 0 and article_count % 20000 == 0: # Log progress every 20,000 articles
                     logger.info(f"[{lang_code}] Gensim processed and wrote {article_count} articles...")
         
         logger.success(f"[{lang_code}] Gensim extraction finished. Total articles written: {article_count} to {output_text_file}")
@@ -60,7 +66,7 @@ def parse_all_downloaded_dumps():
 
     dump_patterns = [
         os.path.join(WIKIPEDIA_DUMP_DIR, "*-latest-pages-articles.xml.bz2"),
-        os.path.join(WIKIPEDIA_DUMP_DIR, "*-latest-articles.xml.bz2")
+        os.path.join(WIKIPEDIA_DUMP_DIR, "*-latest-articles.xml.bz2") # Another common pattern
     ]
     all_found_dump_files = []
     for pattern in dump_patterns:
@@ -74,9 +80,10 @@ def parse_all_downloaded_dumps():
 
     for lang_code in LANGUAGES_TO_PROCESS: # From config_pretrainer, e.g., ["en"]
         lang_specific_dump_file = None
+        # Find the correct dump file for the current language code
         for df_path in all_found_dump_files:
             df_name = os.path.basename(df_path)
-            if df_name.startswith(f"{lang_code}wiki"):
+            if df_name.startswith(f"{lang_code}wiki"): # e.g., "enwiki-..."
                 lang_specific_dump_file = df_path
                 break
         
@@ -87,18 +94,22 @@ def parse_all_downloaded_dumps():
                 logger.error(f"Gensim extraction failed for language: {lang_code}.")
         else:
             logger.warning(f"No dump file found or accessible for language '{lang_code}' in '{WIKIPEDIA_DUMP_DIR}'. Skipping its extraction.")
-            if lang_code in LANGUAGES_TO_PROCESS:
+            if lang_code in LANGUAGES_TO_PROCESS: # If a configured language dump is missing, consider it a failure for that language processing.
                  all_successful = False 
 
     if all_successful:
-        logger.success("Gensim Wikipedia text extraction completed for all specified languages.")
+        logger.success("Gensim Wikipedia text extraction completed (or skipped if already done) for all specified languages.")
     else:
         logger.warning("One or more Gensim Wikipedia text extractions failed or were skipped.")
     return all_successful
 
 if __name__ == "__main__":
+    # This allows testing this module standalone
     logger.info("Testing wikipedia_parser.py (gensim version) standalone...")
+    # For standalone test, ensure:
+    # 1. config_pretrainer.py is correctly set up (esp. paths and LANGUAGES_TO_PROCESS).
+    # 2. Wikipedia dumps are present in WIKIPEDIA_DUMP_DIR.
     if parse_all_downloaded_dumps():
         logger.info("Gensim Wikipedia parser module test finished successfully.")
     else:
-        logger.error("Gensim Wikipedia parser module test encountered errors.")
+        logger.error("Gensim Wikipedia parser module test encountered errors or incomplete processing.")
