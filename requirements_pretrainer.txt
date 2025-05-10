@@ -1,3 +1,4 @@
+# FILE: requirements_pretrainer.txt
 # In requirements_pretrainer.txt (on your local machine)
 # Comment out or remove both wikiextractor lines:
 # wikiextractor==3.0.6
