@@ -4,6 +4,7 @@ import glob
 import json
 import re
 from loguru import logger
+from typing import List, Dict, Optional 
 from config_pretrainer import (
     WIKIPEDIA_EXTRACTED_DIR,
     FILTERED_WIKIPEDIA_TEXT_DIR,
