@@ -10,28 +10,25 @@ from config_pretrainer import (
     WIKIPEDIA_GENSIM_EXTRACTED_TEXT_DIR,
     FILTERED_WIKIPEDIA_TEXT_DIR,
     LANGUAGES_TO_PROCESS,
-    # Import the keyword dictionaries directly from config, which now imports them from separate files
     HEALTH_CATEGORIES_KEYWORDS_EN,
-    HEALTH_CATEGORIES_KEYWORDS_FR, # These will be populated if defined & imported in config
-    HEALTH_CATEGORIES_KEYWORDS_AR, # These will be populated if defined & imported in config
+    HEALTH_CATEGORIES_KEYWORDS_FR,
+    HEALTH_CATEGORIES_KEYWORDS_AR,
     GENERAL_HEALTH_KEYWORDS_FILTER,
     MIN_FILTERED_ARTICLE_LENGTH,
     FILTERING_PROCESSES,
-    FILTERING_CHUNK_SIZE
+    FILTERING_CHUNK_SIZE,
+    MAX_ARTICLES_TO_READ_FROM_GENSIM_PER_LANG # New import
 )
 from wikipedia_parser import ARTICLE_SEPARATOR
 
-# This function now directly uses the imported dictionaries
 def get_health_keywords_dict_for_lang(lang_code: str) -> Dict[str, List[str]]:
     if lang_code == "en": return HEALTH_CATEGORIES_KEYWORDS_EN
     elif lang_code == "fr": return HEALTH_CATEGORIES_KEYWORDS_FR
     elif lang_code == "ar": return HEALTH_CATEGORIES_KEYWORDS_AR
     else:
-        logger.warning(f"No specific health keyword dictionary configured for lang '{lang_code}'.")
+        logger.warning(f"No specific health keyword dictionary for lang '{lang_code}'.")
         return {}
 
-# _check_relevance_worker function remains the same as the multiprocessing version
-# It correctly receives lang_health_keywords_dict as an argument
 def _check_relevance_worker(
     article_text_raw_for_worker: str,
     specific_lang_health_keywords_dict_for_worker: Dict[str, List[str]],
@@ -55,7 +52,7 @@ def _check_relevance_worker(
 
     text_lower = full_text_for_check.lower()
     is_relevant = False
-    if specific_lang_health_keywords_dict_for_worker: # Check if the passed dict is not empty
+    if specific_lang_health_keywords_dict_for_worker:
         for keywords_for_category in specific_lang_health_keywords_dict_for_worker.values():
             for keyword in keywords_for_category:
                 if re.search(r'\b' + re.escape(keyword.lower()) + r'\b', text_lower):
@@ -71,13 +68,11 @@ def _check_relevance_worker(
         return title_heuristic, body_text_to_save
     return None
 
-# simple_clean_text_for_filtering function remains the same
 def simple_clean_text_for_filtering(text: str) -> str:
     text = re.sub(r'<[^>]+>', ' ', text) 
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
-# filter_articles_for_language function remains the same as the multiprocessing version
 def filter_articles_for_language(lang_code: str):
     input_gensim_file_path = os.path.join(WIKIPEDIA_GENSIM_EXTRACTED_TEXT_DIR, lang_code, f"{lang_code}_gensim_extracted_articles.txt")
     output_lang_filtered_dir = os.path.join(FILTERED_WIKIPEDIA_TEXT_DIR, lang_code)
@@ -87,19 +82,24 @@ def filter_articles_for_language(lang_code: str):
         logger.warning(f"Gensim parsed text file not found for '{lang_code}': {input_gensim_file_path}")
         return 0
 
-    logger.info(f"Filtering relevant articles for '{lang_code}' from '{input_gensim_file_path}' using {FILTERING_PROCESSES} processes.")
+    # Get the limit for how many articles to read from the gensim output for this language
+    max_articles_to_read = MAX_ARTICLES_TO_READ_FROM_GENSIM_PER_LANG.get(lang_code, float('inf')) 
+
+    logger.info(f"Filtering relevant articles for '{lang_code}' from '{input_gensim_file_path}' using {FILTERING_PROCESSES} processes. "
+                f"Will read up to {max_articles_to_read if max_articles_to_read != float('inf') else 'all'} articles from gensim output.")
     
     specific_lang_health_keywords_dict = get_health_keywords_dict_for_lang(lang_code)
     has_specific_keywords = bool(specific_lang_health_keywords_dict and any(specific_lang_health_keywords_dict.values()))
 
     if not has_specific_keywords and not GENERAL_HEALTH_KEYWORDS_FILTER:
-        logger.error(f"No keywords for filtering '{lang_code}'. Aborting.")
+        logger.error(f"No keywords for filtering '{lang_code}'. Aborting filtering for this language.")
         return 0
     elif not has_specific_keywords:
-         logger.warning(f"No specific keywords for '{lang_code}'. Relying on GENERAL_HEALTH_KEYWORDS_FILTER.")
+         logger.warning(f"No specific keywords for '{lang_code}'. Relying solely on GENERAL_HEALTH_KEYWORDS_FILTER.")
 
-    articles_processed_count = 0
+    articles_submitted_to_pool_count = 0
     relevant_articles_saved_count = 0
+    articles_read_from_file_count = 0 # Count articles read from the input gensim file
     
     process_func = partial(_check_relevance_worker,
                            specific_lang_health_keywords_dict_for_worker=specific_lang_health_keywords_dict,
@@ -113,16 +113,30 @@ def filter_articles_for_language(lang_code: str):
              multiprocessing.Pool(processes=FILTERING_PROCESSES) as pool:
             
             current_article_lines_buffer = []
-            for line_content in f_in:
+            for line_content in f_in: # Read line by line from the large gensim output
+                if articles_read_from_file_count >= max_articles_to_read:
+                    logger.info(f"[{lang_code}] Reached limit of {max_articles_to_read} articles read from gensim file. Stopping reading for this language.")
+                    # Process any remaining articles in the current_article_lines_buffer before breaking
+                    if current_article_lines_buffer:
+                        article_text_raw_from_buffer = "".join(current_article_lines_buffer).strip()
+                        if article_text_raw_from_buffer:
+                             article_batch_for_pool.append(article_text_raw_from_buffer)
+                             # This article was read before hitting the limit but not processed yet
+                        current_article_lines_buffer = []
+                    break # Exit the file reading loop
+
                 if line_content.strip() == ARTICLE_SEPARATOR.strip():
                     if current_article_lines_buffer:
                         article_text_raw = "".join(current_article_lines_buffer).strip()
+                        articles_read_from_file_count += 1 # Increment when a full article is identified
+                        
                         if article_text_raw: 
                             article_batch_for_pool.append(article_text_raw)
-                            articles_processed_count += 1
                         
                         if len(article_batch_for_pool) >= FILTERING_CHUNK_SIZE:
+                            logger.debug(f"[{lang_code}] Submitting chunk of {len(article_batch_for_pool)} articles to filter pool (Total articles read from file: {articles_read_from_file_count}).")
                             results = pool.map(process_func, article_batch_for_pool)
+                            articles_submitted_to_pool_count += len(article_batch_for_pool)
                             for result_tuple in results:
                                 if result_tuple:
                                     title_heuristic, body_text_to_save = result_tuple
@@ -132,19 +146,24 @@ def filter_articles_for_language(lang_code: str):
                                     with open(out_fn, 'w', encoding='utf-8') as out_f:
                                         out_f.write(title_heuristic + "\n\n" + body_text_to_save)
                                     if relevant_articles_saved_count % 1000 == 0:
-                                        logger.info(f"[{lang_code}] Saved {relevant_articles_saved_count} relevant articles (processed approx. {articles_processed_count}).")
-                            article_batch_for_pool = [] 
+                                        logger.info(f"[{lang_code}] Saved {relevant_articles_saved_count} relevant articles (submitted to pool approx. {articles_submitted_to_pool_count}).")
+                            article_batch_for_pool = [] # Reset batch
                     current_article_lines_buffer = [] 
                 else:
                     current_article_lines_buffer.append(line_content)
             
-            if current_article_lines_buffer:
+            # Process any remaining content in current_article_lines_buffer (if limit not hit, or last article before limit)
+            if current_article_lines_buffer and (articles_read_from_file_count < max_articles_to_read or max_articles_to_read == float('inf')):
                 article_text_raw = "".join(current_article_lines_buffer).strip()
-                if article_text_raw: article_batch_for_pool.append(article_text_raw)
-                articles_processed_count +=1
+                if article_text_raw: 
+                    article_batch_for_pool.append(article_text_raw)
+                    # articles_read_from_file_count +=1 # Counted when separator is found or loop ends
             
+            # Process final accumulated batch for the pool
             if article_batch_for_pool:
+                logger.debug(f"[{lang_code}] Submitting final chunk of {len(article_batch_for_pool)} articles to filter pool (Total articles read from file: {articles_read_from_file_count}).")
                 results = pool.map(process_func, article_batch_for_pool)
+                articles_submitted_to_pool_count += len(article_batch_for_pool)
                 for result_tuple in results:
                     if result_tuple:
                         title_heuristic, body_text_to_save = result_tuple
@@ -153,15 +172,16 @@ def filter_articles_for_language(lang_code: str):
                         out_fn = os.path.join(output_lang_filtered_dir, f"{lang_code}_article_{relevant_articles_saved_count}_{safe_title}.txt")
                         with open(out_fn, 'w', encoding='utf-8') as out_f:
                             out_f.write(title_heuristic + "\n\n" + body_text_to_save)
-                logger.info(f"[{lang_code}] Processed final batch. Total relevant saved for this lang: {relevant_articles_saved_count}.")
+                logger.info(f"[{lang_code}] Processed final batch. Total relevant saved: {relevant_articles_saved_count}.")
 
     except Exception as e_file:
         logger.error(f"Error processing file {input_gensim_file_path} with multiprocessing: {e_file}", exc_info=True)
     
-    logger.info(f"Finished filtering for '{lang_code}'. Total relevant saved: {relevant_articles_saved_count} from {articles_processed_count} articles read.")
+    logger.info(f"Finished filtering for '{lang_code}'. Total relevant articles saved: {relevant_articles_saved_count}. "
+                f"Total articles read from gensim file: {articles_read_from_file_count}. "
+                f"Total articles submitted to filter pool: {articles_submitted_to_pool_count}.")
     return relevant_articles_saved_count
 
-# filter_all_extracted_wikipedia and if __name__ == "__main__": remain the same
 def filter_all_extracted_wikipedia():
     logger.info("Starting filtering of all (gensim) extracted Wikipedia articles for health relevance...")
     os.makedirs(FILTERED_WIKIPEDIA_TEXT_DIR, exist_ok=True)
@@ -170,9 +190,9 @@ def filter_all_extracted_wikipedia():
         total_relevant_across_all_langs += filter_articles_for_language(lang_code)
     
     if total_relevant_across_all_langs > 0:
-        logger.success(f"Filtering complete. Total health-relevant articles saved across all processed languages: {total_relevant_across_all_langs}")
+        logger.success(f"Filtering complete. Total health-relevant articles saved: {total_relevant_across_all_langs}")
     else:
-        logger.warning("Filtering complete, but no health-relevant articles were found or saved. Check keyword lists and gensim output quality.")
+        logger.warning("Filtering complete, but no health-relevant articles were found/saved. Check keyword lists and gensim output.")
     return total_relevant_across_all_langs > 0
 
 if __name__ == "__main__":
