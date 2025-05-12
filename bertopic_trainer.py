@@ -129,19 +129,52 @@ def train_final_guided_model(sbert_model: SentenceTransformer,
     try:
         logger.info("Fitting final guided BERTopic model on combined multilingual Wikipedia data with HEALTH_TOPICS seeds...")
         # This step will take time, proportional to len(all_language_documents)
+        # If an error occurs during this step, the main try block catches it.
         final_guided_model.fit_transform(all_language_documents) 
+        
         num_topics = len(final_guided_model.get_topic_info()) -1 # Exclude outlier topic
         logger.success(f"Final guided BERTopic model training completed. Found {num_topics} topics.")
+        
         if num_topics > 0: 
+            # Log sample topics *after* training, *before* saving
             logger.info(f"Sample of final guided topics (keywords might be mixed language initially):\n{final_guided_model.get_topic_info().head(20)}")
         
-        os.makedirs(FINAL_BERTOPIC_OUTPUT_DIR, exist_ok=True)
-        final_guided_model.save(FINAL_BERTOPIC_FULL_PATH, serialization="joblib", save_embedding_model=False)
-        logger.success(f"FINAL Guided BERTopic model saved to: {FINAL_BERTOPIC_FULL_PATH}")
-        return final_guided_model
+        # --- MODIFIED SAVE BLOCK WITH ERROR HANDLING AND VERIFICATION ---
+        os.makedirs(FINAL_BERTOPIC_OUTPUT_DIR, exist_ok=True) # Ensure dir exists
+
+        try:
+            logger.info(f"Attempting to save FINAL Guided BERTopic model to: {FINAL_BERTOPIC_FULL_PATH}")
+            
+            # This is the critical save call
+            final_guided_model.save(FINAL_BERTOPIC_FULL_PATH, serialization="joblib", save_embedding_model=False)
+            
+            # Add a quick check to confirm file exists and is not tiny
+            # A real BERTopic model file will be MBs or GBs, 100KB is just a minimal sanity check
+            MIN_EXPECTED_FILE_SIZE_KB = 100 
+            
+            if os.path.exists(FINAL_BERTOPIC_FULL_PATH) and os.path.getsize(FINAL_BERTOPIC_FULL_PATH) > 1024 * MIN_EXPECTED_FILE_SIZE_KB: 
+                 logger.success(f"FINAL Guided BERTopic model SUCCESSFULLY saved to: {FINAL_BERTOPIC_FULL_PATH}")
+                 return final_guided_model # <-- Return model here ONLY on successful save & verification
+            else:
+                 # This indicates the .save() call didn't throw an error, but the file isn't valid
+                 file_size = os.path.getsize(FINAL_BERTOPIC_FULL_PATH) if os.path.exists(FINAL_BERTOPIC_FULL_PATH) else -1
+                 error_msg = f"FINAL Guided BERTopic model save call finished, but file {FINAL_BERTOPIC_FULL_PATH} was not found or too small ({file_size} bytes) after save attempt. Expected > {MIN_EXPECTED_FILE_SIZE_KB} KB."
+                 logger.error(error_msg)
+                 # It's good practice to indicate failure if the file wasn't saved correctly
+                 # raise IOError(error_msg) # Uncomment if you want to raise an exception to stop the main script more aggressively
+                 return None # <-- Explicitly return None to signal save failure
+
+        except Exception as e_save: # Catch errors specifically during the save operation
+            logger.error(f"ERROR occurred during saving the final BERTopic model to {FINAL_BERTOPIC_FULL_PATH}: {e_save}", exc_info=True)
+            return None # <-- Return None to signal save failure
+
+        # --- END MODIFIED SAVE BLOCK ---
+
     except Exception as e:
-        logger.error(f"Error during final guided BERTopic training: {e}", exc_info=True)
-        return None
+        # This main try block now primarily catches errors *before* the dedicated save block
+        logger.error(f"ERROR during final guided BERTopic training (before save attempt): {e}", exc_info=True)
+        return None # Indicate training or earlier step failed
+
 
 def run_bertopic_training_pipeline():
     logger.info("=== BERTopic Training Pipeline (Gensim Path, Multilingual) Initiated ===")
@@ -172,10 +205,11 @@ def run_bertopic_training_pipeline():
     # Directly train the final guided model on the combined multilingual documents
     final_model = train_final_guided_model(sbert, wiki_docs_multilingual, health_topic_seeds)
 
+    # This check remains the same, relying on train_final_guided_model returning None on failure
     if final_model:
         logger.success("=== BERTopic Training Pipeline Completed Successfully. Final model saved. ===")
     else:
-        logger.error("=== BERTopic Training Pipeline Failed. ===")
+        logger.error("=== BERTOPIC TRAINING PIPELINE FAILED. Check logs for specific errors during training or saving. ===")
 
 if __name__ == "__main__":
     run_bertopic_training_pipeline()
