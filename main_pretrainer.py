@@ -36,12 +36,12 @@ def main():
         return
     logger.success("Wikipedia dumps parsed successfully.")
 
-    # Step 3: Filter Articles for Health Relevance
-    logger.info("--- Step 3: Filtering Wikipedia Articles for Health Relevance ---")
-    if not filter_all_extracted_wikipedia():
-        logger.error("Failed to filter Wikipedia articles or no relevant articles found. Aborting pipeline.")
-        return
-    logger.success("Wikipedia articles filtered successfully.")
+    # # Step 3: Filter Articles for Health Relevance
+    # logger.info("--- Step 3: Filtering Wikipedia Articles for Health Relevance ---")
+    # if not filter_all_extracted_wikipedia():
+    #     logger.error("Failed to filter Wikipedia articles or no relevant articles found. Aborting pipeline.")
+    #     return
+    # logger.success("Wikipedia articles filtered successfully.")
 
     # Step 4: Run BERTopic Training Pipeline (which now includes Stage 1 (optional base) and Stage 2 (final guided))
     logger.info("--- Step 4: Running BERTopic Training Pipeline ---")
