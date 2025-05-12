@@ -145,8 +145,10 @@ def train_final_guided_model(sbert_model: SentenceTransformer,
         try:
             logger.info(f"Attempting to save FINAL Guided BERTopic model to: {FINAL_BERTOPIC_FULL_PATH}")
             
-            # This is the critical save call
-            final_guided_model.save(FINAL_BERTOPIC_FULL_PATH, serialization="joblib", save_embedding_model=False)
+            # *** THIS IS THE MODIFIED LINE ***
+            # Using BERTopic's default pickle serialization by removing 'serialization="joblib"'
+            final_guided_model.save(FINAL_BERTOPIC_FULL_PATH, save_embedding_model=False)
+            # *** END OF MODIFIED LINE ***
             
             # Add a quick check to confirm file exists and is not tiny
             # A real BERTopic model file will be MBs or GBs, 100KB is just a minimal sanity check
@@ -160,8 +162,6 @@ def train_final_guided_model(sbert_model: SentenceTransformer,
                  file_size = os.path.getsize(FINAL_BERTOPIC_FULL_PATH) if os.path.exists(FINAL_BERTOPIC_FULL_PATH) else -1
                  error_msg = f"FINAL Guided BERTopic model save call finished, but file {FINAL_BERTOPIC_FULL_PATH} was not found or too small ({file_size} bytes) after save attempt. Expected > {MIN_EXPECTED_FILE_SIZE_KB} KB."
                  logger.error(error_msg)
-                 # It's good practice to indicate failure if the file wasn't saved correctly
-                 # raise IOError(error_msg) # Uncomment if you want to raise an exception to stop the main script more aggressively
                  return None # <-- Explicitly return None to signal save failure
 
         except Exception as e_save: # Catch errors specifically during the save operation
