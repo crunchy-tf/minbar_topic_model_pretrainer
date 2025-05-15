@@ -1,9 +1,23 @@
-sentence-transformers>=2.2.0
-bertopic[visualization]>=0.15.0 # [visualization] is optional but useful for inspecting topics
-pandas>=1.3.0
+# Pinned versions for reproducibility and compatibility with nlp_analyzer_service
+sentence-transformers==2.7.0  # <<< EXAMPLE - CHOOSE YOUR VERSION AND PIN
+bertopic==0.16.0              # <<< EXAMPLE - CHOOSE YOUR VERSION AND PIN
+scikit-learn==1.3.2           # <<< EXAMPLE - CHOOSE YOUR VERSION AND PIN
+pandas==2.0.3                 # <<< EXAMPLE - CHOOSE YOUR VERSION AND PIN
+numpy==1.26.0                 # <<< EXAMPLE - CHOOSE YOUR VERSION AND PIN
+umap-learn==0.5.5             # <<< EXAMPLE - CHOOSE YOUR VERSION AND PIN
+hdbscan==0.8.33               # <<< EXAMPLE - CHOOSE YOUR VERSION AND PIN
+# Ensure joblib version is also compatible if used, though default pickle is less sensitive
+# joblib==1.3.2
+
 loguru>=0.7.0
-requests # For wikipedia_downloader.py
-gensim>=4.0.0 # ADDED for Wikipedia parsing
+requests
+gensim>=4.0.0 
 
 # For CPU-only PyTorch
-torch>=2.0.0 --index-url https://download.pytorch.org/whl/cpu
+torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu # <<< EXAMPLE - CHOOSE YOUR VERSION AND PIN
+
+# Dependencies that might have been installed for the nlp_analyzer_service
+# and could be relevant for consistency if bertopic depends on them,
+# or if the pretrainer uses them (even if not explicitly in its old reqs)
+# protobuf>=3.20.0
+# sentencepiece>=0.1.98
