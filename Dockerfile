@@ -17,6 +17,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
+# Create cache directories and set permissions BEFORE changing user
+RUN mkdir -p /tmp/huggingface_cache /tmp/numba_cache && \
+    chown -R nobody:nogroup /tmp/huggingface_cache /tmp/numba_cache && \
+    chmod -R 777 /tmp/huggingface_cache /tmp/numba_cache
+
+# Set environment variables for cache locations
+ENV TRANSFORMERS_CACHE=/tmp/huggingface_cache
+ENV HF_HOME=/tmp/huggingface_cache
+ENV NUMBA_CACHE_DIR=/tmp/numba_cache
+
 # Copy the requirements file first to leverage Docker layer caching
 COPY ./requirements_pretrainer.txt /pretrainer/requirements_pretrainer.txt
 
@@ -42,12 +52,9 @@ COPY ./wikipedia_parser.py /pretrainer/wikipedia_parser.py
 RUN mkdir -p /pretrainer/pretrainer_workspace && \
     chown -R nobody:nogroup /pretrainer/pretrainer_workspace && \
     chmod -R 777 /pretrainer/pretrainer_workspace
-# Note: Running as non-root and using 777 is for simplicity in this context.
-# For production, you'd handle user permissions more carefully.
-# We'll run the script as a non-root user for better practice.
+
+# Switch to non-root user
 USER nobody:nogroup
 
 # When the container runs, it will execute the main pretrainer pipeline
-# This will download data, parse, filter, and train the BERTopic model,
-# saving it inside /pretrainer/pretrainer_workspace/...
 ENTRYPOINT ["python", "main_pretrainer.py"]

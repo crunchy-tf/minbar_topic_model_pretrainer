@@ -1,20 +1,32 @@
-# Consistent pinned versions for model training and inference
-sentence-transformers==2.7.0
-bertopic==0.16.0
-scikit-learn==1.3.2
-pandas==2.0.3
-numpy==1.26.0                 # <<< ENSURE THIS IS PINNED
-scipy==1.11.4                 # <<< ADD AND PIN THIS
-umap-learn==0.5.5
-hdbscan==0.8.33
-joblib==1.3.2
+# topic_model_pretrainer/requirements_pretrainer.txt
 
+# --- Core ML/NLP Stack - Pin these versions carefully for reproducibility ---
+# These versions should ideally be determined from a known working environment
+# or chosen as recent, stable, and compatible versions.
+# These exact versions will need to be mirrored in your nlp_analyzer_service/requirements.txt
+
+numpy==1.26.0                 # Pin numpy first
+scipy==1.11.4                 # Known to be compatible with numpy 1.26 and recent gensim/sklearn
+pandas==2.0.3
+scikit-learn==1.3.2           # Core for BERTopic
+joblib==1.3.2                 # Often used by scikit-learn components
+
+umap-learn==0.5.5
+hdbscan==0.8.33               # Includes Cython, needs build tools
+
+sentence-transformers==2.7.0  # For embeddings
+torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu # PyTorch for sentence-transformers
+
+bertopic==0.16.0              # BERTopic itself
+
+# --- Other Dependencies for Pretrainer ---
 loguru==0.7.2
 requests==2.31.0
-gensim==4.3.2
+gensim==4.3.2                 # For Wikipedia parsing
 
-torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
-
+# --- Dependencies for broader compatibility & Hugging Face ecosystem ---
+# Add these to ensure the environment is as close as possible to the nlp_analyzer_service
+# even if not directly used by all pretrainer components, sentence-transformers might touch them.
+transformers==4.35.2          # Hugging Face transformers library
 protobuf==4.25.1
 sentencepiece==0.1.99
-transformers==4.35.2
