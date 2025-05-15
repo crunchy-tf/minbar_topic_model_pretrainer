@@ -1,20 +1,22 @@
+# topic_model_pretrainer/requirements_pretrainer.txt
+
 # Consistent pinned versions for model training and inference
 sentence-transformers==2.7.0
 bertopic==0.16.0
 scikit-learn==1.3.2
 pandas==2.0.3
-numpy==1.26.0
+numpy==1.26.0                 # <<< ENSURE THIS IS PINNED
+scipy==1.11.4                 # <<< ADD AND PIN THIS
 umap-learn==0.5.5
 hdbscan==0.8.33
 joblib==1.3.2
 
-loguru==0.7.2  # Pinning this too for consistency
-requests==2.31.0 # Pinning this too
-gensim==4.3.2    # Pinning this too
+loguru==0.7.2
+requests==2.31.0
+gensim==4.3.2
 
 torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
 
-# Added for consistency with analyzer, even if not directly used by pretrainer
 protobuf==4.25.1
 sentencepiece==0.1.99
-transformers==4.35.2 # Add this as sentence-transformers may rely on a compatible version
+transformers==4.35.2
