@@ -1,5 +1,3 @@
-# topic_model_pretrainer/requirements_pretrainer.txt
-
 # Consistent pinned versions for model training and inference
 sentence-transformers==2.7.0
 bertopic==0.16.0
