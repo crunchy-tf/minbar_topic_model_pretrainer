@@ -7,7 +7,3 @@ gensim>=4.0.0 # ADDED for Wikipedia parsing
 
 # For CPU-only PyTorch
 torch>=2.0.0 --index-url https://download.pytorch.org/whl/cpu
-# torchvision --index-url https://download.pytorch.org/whl/cpu # Optional
-# torchaudio --index-url https://download.pytorch.org/whl/cpu  # Optional
-
-# Removed: wikiextractor, Babel, pylatexenc, beautifulsoup4 (unless used elsewhere, unlikely)
