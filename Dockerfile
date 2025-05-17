@@ -38,7 +38,6 @@ RUN pip install --no-cache-dir -r /pretrainer/requirements_pretrainer.txt
 COPY ./filter_keywords /pretrainer/filter_keywords
 COPY ./bertopic_trainer.py /pretrainer/bertopic_trainer.py
 COPY ./config_pretrainer.py /pretrainer/config_pretrainer.py
-COPY ./health_topics_data.py /pretrainer/health_topics_data.py
 COPY ./main_pretrainer.py /pretrainer/main_pretrainer.py
 COPY ./wikipedia_downloader.py /pretrainer/wikipedia_downloader.py
 COPY ./wikipedia_filterer.py /pretrainer/wikipedia_filterer.py
