@@ -27,8 +27,8 @@ FINAL_BERTOPIC_FULL_PATH = os.path.join(FINAL_BERTOPIC_OUTPUT_DIR, FINAL_BERTOPI
 
 # BERTopic training parameters (articles sampled *after* filtering)
 WIKIPEDIA_ARTICLES_PER_LANGUAGE_LIMIT: dict[str, int] = {
-    "en": 30000,
-    "fr": 15000,
+    "en": 10000,
+    "fr": 10000,
     "ar": 10000
 }
 BERTOPIC_MIN_TOPIC_SIZE = 15
@@ -39,8 +39,8 @@ SEED_MAX_KEYWORDS_PER_TOPIC = 7
 
 # --- NEW: Limit articles read by the filterer from Gensim output ---
 MAX_ARTICLES_TO_READ_FROM_GENSIM_PER_LANG: dict[str, int] = {
-    "en": 750000,   # Filter up to the first 750k English articles from Gensim output
-    "fr": 400000,
+    "en": 250000, 
+    "fr": 250000,
     "ar": 250000
 }
 
