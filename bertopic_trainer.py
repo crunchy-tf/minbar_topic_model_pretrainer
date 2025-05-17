@@ -90,32 +90,40 @@ def load_filtered_wikipedia_docs(base_filtered_dir: str, langs_to_process: List[
     logger.info(f"Loaded a total of {total_docs_loaded} documents from all processed languages for BERTopic training. After final check, document count is {len(documents)}.")
     return documents
 
-# --- Helper: Generate Seed Keywords (Still called but its output won't be used for BERTopic init) ---
+# --- Helper: Generate Seed Keywords (Still called but its output might be overridden for this test) ---
 def generate_seed_keywords(health_topics_dict: Dict[str, str],
                            min_keyword_len: int,
                            max_keywords_per_topic: int) -> List[List[str]]:
     import re 
     seed_topic_list = []
-    logger.info("Generating seed keywords (for logging purposes only in this unguided debug run)...")
+    logger.info("Generating seed keywords for Guided BERTopic from health_topics_data.py...")
     for topic_key, description_keywords_english in health_topics_dict.items():
+        if not isinstance(description_keywords_english, str):
+            logger.warning(f"Description for '{topic_key}' is not a string: {description_keywords_english}. Skipping this seed.")
+            continue
         cleaned_description = re.sub(r'\s+', ' ', description_keywords_english.lower()).strip()
-        keywords = [kw for kw in cleaned_description.split(' ') if len(kw) >= min_keyword_len]
-        if keywords:
-            unique_keywords = list(dict.fromkeys(keywords)) 
+        keywords_initial = cleaned_description.split(' ')
+        keywords_filtered_len = [kw for kw in keywords_initial if len(kw) >= min_keyword_len]
+        keywords_final = [kw.strip() for kw in keywords_filtered_len if kw.strip()]
+
+        if keywords_final:
+            unique_keywords = list(dict.fromkeys(keywords_final)) 
             seed_topic_list.append(unique_keywords[:max_keywords_per_topic])
             logger.trace(f"Generated seed for '{topic_key}': {unique_keywords[:max_keywords_per_topic]}")
         else:
-            logger.warning(f"No suitable seed keywords extracted for HEALTH_TOPICS_KEYWORDS key: '{topic_key}' (description: '{description_keywords_english}')")
-    logger.info(f"Generated {len(seed_topic_list)} non-empty sets of seed keywords (these will NOT be used for BERTopic initialization in this unguided run).")
-    return seed_topic_list # Return them, but run_bertopic_training_pipeline will override with None
+            logger.warning(f"No suitable seed keywords extracted for HEALTH_TOPICS_KEYWORDS key: '{topic_key}' (description: '{description_keywords_english}') - Will not be used for guidance.")
+    logger.info(f"Generated {len(seed_topic_list)} non-empty sets of seed keywords from health_topics_data.py.")
+    return seed_topic_list
 
-# --- Train Model (Unguided for this Debug Run) ---
-def train_final_model_unguided_debug(sbert_model: SentenceTransformer, 
-                                     all_language_documents: List[str]) -> BERTopic | None:
-    logger.info("--- Starting BERTopic Trainer: UNGUIDED DEBUG MODE (on multilingual filtered Wikipedia data) ---")
+# --- Train Final Guided Model (on combined multilingual Wikipedia data) ---
+# Name reverted to original, but behavior changed via run_bertopic_training_pipeline for this test
+def train_final_guided_model(sbert_model: SentenceTransformer, 
+                             all_language_documents: List[str], 
+                             seed_keywords: List[List[str]] | None) -> BERTopic | None: # Allow None for seeds
+    logger.info("--- Starting BERTopic Trainer: Guided Model (SIMPLE SEED TEST or FULL) ---")
     
     if not all_language_documents or len(all_language_documents) < BERTOPIC_MIN_TOPIC_SIZE:
-        logger.error(f"Insufficient documents ({len(all_language_documents)}) for BERTopic training. Minimum required: {BERTOPIC_MIN_TOPIC_SIZE}")
+        logger.error(f"Insufficient documents ({len(all_language_documents)}) for final BERTopic training. Minimum required: {BERTOPIC_MIN_TOPIC_SIZE}")
         return None
     
     logger.info(f"Number of documents for BERTopic: {len(all_language_documents)}")
@@ -131,62 +139,81 @@ def train_final_model_unguided_debug(sbert_model: SentenceTransformer,
         else:
             logger.error("All documents were None or empty after checks! Cannot proceed with BERTopic.")
             return None
+
+    logger.info(f"Number of seed keyword sets being used for BERTopic: {len(seed_keywords) if seed_keywords else 0}")
+    if seed_keywords:
+        empty_seed_sets_count = 0
+        for i, seed_set in enumerate(seed_keywords):
+            if not seed_set: 
+                logger.error(f"CRITICAL PRE-FIT CHECK: Empty seed keyword set found at index {i} in seed_topic_list!")
+                empty_seed_sets_count +=1
+        if empty_seed_sets_count > 0:
+            logger.error(f"Found a total of {empty_seed_sets_count} empty seed sets. This can cause issues.")
+        logger.info(f"First seed keyword set sample (if any): {seed_keywords[0] if seed_keywords else 'None'}")
     
-    logger.info(f"Initializing BERTopic model for UNGUIDED training with {len(all_language_documents)} documents.")
+    logger.info(f"Initializing BERTopic model for guided training with {len(all_language_documents)} documents.")
     
-    # *** KEY CHANGE FOR UNGUIDED TEST ***
     final_model = BERTopic(
         embedding_model=sbert_model,
         language="multilingual", 
         min_topic_size=BERTOPIC_MIN_TOPIC_SIZE,
         nr_topics=BERTOPIC_NR_TOPICS,
-        seed_topic_list=None,  # Explicitly set to None for unguided mode
+        seed_topic_list=seed_keywords, # This will be the simple list or None
         verbose=True,
         calculate_probabilities=True
     )
 
     try:
-        logger.info("Fitting UNGUIDED BERTopic model on combined multilingual Wikipedia data...")
+        guidance_type = "HEALTH_TOPICS seeds" if seed_keywords else "NO seeds (unguided)"
+        if seed_keywords and len(seed_keywords) < 10: # Heuristic for simple test
+             guidance_type = "SIMPLE TEST seeds"
+        logger.info(f"Fitting final BERTopic model on combined multilingual Wikipedia data with {guidance_type}...")
+        
         final_model.fit_transform(all_language_documents) 
         
         num_topics = len(final_model.get_topic_info()) -1 
-        logger.success(f"UNGUIDED BERTopic model training completed. Found {num_topics} topics.")
+        logger.success(f"BERTopic model training completed (with {guidance_type}). Found {num_topics} topics.")
         
         if num_topics > 0: 
-            logger.info(f"Sample of UNGUIDED topics:\n{final_model.get_topic_info().head(20)}")
+            logger.info(f"Sample of topics (with {guidance_type}):\n{final_model.get_topic_info().head(20)}")
         
         os.makedirs(FINAL_BERTOPIC_OUTPUT_DIR, exist_ok=True)
 
         try:
-            # Modify filename for this debug model if you want to keep it separate
-            debug_model_path = FINAL_BERTOPIC_FULL_PATH.replace(".joblib", "_unguided_debug.joblib")
-            logger.info(f"Attempting to save UNGUIDED BERTopic model to: {debug_model_path}")
-            final_model.save(debug_model_path, save_embedding_model=False)
+            model_save_path = FINAL_BERTOPIC_FULL_PATH
+            if seed_keywords and len(seed_keywords) < 10: # Simple test save path
+                model_save_path = FINAL_BERTOPIC_FULL_PATH.replace(".joblib", "_guided_simple_test.joblib")
+            elif not seed_keywords: # Unguided save path
+                 model_save_path = FINAL_BERTOPIC_FULL_PATH.replace(".joblib", "_unguided_test.joblib")
+
+
+            logger.info(f"Attempting to save BERTopic model (with {guidance_type}) to: {model_save_path}")
+            final_model.save(model_save_path, save_embedding_model=False)
             
             MIN_EXPECTED_FILE_SIZE_KB = 100 
-            if os.path.exists(debug_model_path) and os.path.getsize(debug_model_path) > 1024 * MIN_EXPECTED_FILE_SIZE_KB: 
-                 logger.success(f"UNGUIDED BERTopic model SUCCESSFULLY saved to: {debug_model_path}")
+            if os.path.exists(model_save_path) and os.path.getsize(model_save_path) > 1024 * MIN_EXPECTED_FILE_SIZE_KB: 
+                 logger.success(f"BERTopic model (with {guidance_type}) SUCCESSFULLY saved to: {model_save_path}")
                  return final_model
             else:
-                 file_size = os.path.getsize(debug_model_path) if os.path.exists(debug_model_path) else -1
-                 error_msg = f"UNGUIDED BERTopic model save call finished, but file {debug_model_path} was not found or too small ({file_size} bytes). Expected > {MIN_EXPECTED_FILE_SIZE_KB} KB."
+                 file_size = os.path.getsize(model_save_path) if os.path.exists(model_save_path) else -1
+                 error_msg = f"BERTopic model (with {guidance_type}) save call finished, but file {model_save_path} was not found or too small ({file_size} bytes). Expected > {MIN_EXPECTED_FILE_SIZE_KB} KB."
                  logger.error(error_msg)
                  return None
 
         except Exception as e_save: 
-            logger.error(f"ERROR occurred during saving the UNGUIDED BERTopic model to {debug_model_path}: {e_save}", exc_info=True)
+            logger.error(f"ERROR occurred during saving the BERTopic model (with {guidance_type}) to {model_save_path}: {e_save}", exc_info=True)
             return None
 
     except ValueError as ve: 
-        logger.error(f"ValueError during UNGUIDED BERTopic fit_transform (potentially inhomogeneous shape): {ve}", exc_info=True)
+        logger.error(f"ValueError during BERTopic fit_transform (with {guidance_type} - potentially inhomogeneous shape): {ve}", exc_info=True)
         return None
     except Exception as e:
-        logger.error(f"ERROR during UNGUIDED BERTopic training (fit_transform or other): {e}", exc_info=True)
+        logger.error(f"ERROR during BERTopic training (with {guidance_type} - fit_transform or other): {e}", exc_info=True)
         return None
 
 
 def run_bertopic_training_pipeline():
-    logger.info("=== BERTopic Training Pipeline (Gensim Path, Multilingual) Initiated (UNGUIDED DEBUG MODE) ===")
+    logger.info("=== BERTopic Training Pipeline (Gensim Path, Multilingual) Initiated (SIMPLE GUIDED TEST MODE) ===")
     
     sbert = load_or_download_sbert(SBERT_MODEL_NAME, SBERT_MODEL_SAVE_PATH)
     if not sbert:
@@ -202,21 +229,32 @@ def run_bertopic_training_pipeline():
         logger.error("No documents loaded for BERTopic training after filtering. Aborting.")
         return
 
-    # We call generate_seed_keywords just to see its logs, but we won't use its output
+    # Generate full seeds to see logs, but override for test
     _ = generate_seed_keywords( 
         HEALTH_TOPICS_KEYWORDS,
         SEED_KEYWORD_MIN_LEN,
         SEED_MAX_KEYWORDS_PER_TOPIC
     )
-    logger.info("DEBUG: Forcing UNGUIDED mode for BERTopic training. Seed keywords (if any generated) will NOT be used.")
     
-    # Call the renamed unguided debug function, passing None for seed_keywords argument (as it's not used internally)
-    final_model = train_final_model_unguided_debug(sbert, wiki_docs_multilingual)
+    # +++ HARDCODED SIMPLE SEED LIST FOR THIS DEBUGGING RUN +++
+    logger.info("DEBUG: Using a small, hardcoded simple seed list for this Guided BERTopic test run.")
+    simple_test_seeds = [
+        ["disease", "symptom", "illness", "health", "medical"], 
+        ["fever", "cough", "headache", "fatigue", "pain"],
+        ["virus", "bacteria", "infection", "outbreak", "pandemic"] # Added another simple one
+    ] 
+    # Ensure all keywords in simple_test_seeds meet SEED_KEYWORD_MIN_LEN (which is 3) - they do.
+    effective_seeds_for_bertopic = simple_test_seeds
+    # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    
+    # The `train_final_guided_model` function is now used for all cases,
+    # its behavior regarding seed_keywords depends on what's passed to it.
+    final_model = train_final_guided_model(sbert, wiki_docs_multilingual, effective_seeds_for_bertopic) 
 
     if final_model:
-        logger.success("=== BERTopic Training Pipeline (UNGUIDED DEBUG MODE) Completed Successfully. Final model saved. ===")
+        logger.success("=== BERTopic Training Pipeline (SIMPLE GUIDED TEST MODE) Completed Successfully. Final model saved. ===")
     else:
-        logger.error("=== BERTopic Training Pipeline (UNGUIDED DEBUG MODE) FAILED. Check logs. ===")
+        logger.error("=== BERTopic Training Pipeline (SIMPLE GUIDED TEST MODE) FAILED. Check logs. ===")
 
 if __name__ == "__main__":
     run_bertopic_training_pipeline()
