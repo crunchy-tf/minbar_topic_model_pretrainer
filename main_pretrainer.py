@@ -22,26 +22,26 @@ def main():
     os.makedirs(WORKING_DIR, exist_ok=True)
     logger.info(f"All intermediate and output files will be stored under: {WORKING_DIR}")
 
-    # Step 1: Download Wikipedia Dumps
-    logger.info("--- Step 1: Downloading Wikipedia Dumps ---")
-    if not download_all_dumps():
-        logger.error("Failed to download all Wikipedia dumps. Aborting pipeline.")
-        return
-    logger.success("Wikipedia dumps downloaded successfully (or already existed).")
+    # # Step 1: Download Wikipedia Dumps
+    # logger.info("--- Step 1: Downloading Wikipedia Dumps ---")
+    # if not download_all_dumps():
+    #     logger.error("Failed to download all Wikipedia dumps. Aborting pipeline.")
+    #     return
+    # logger.success("Wikipedia dumps downloaded successfully (or already existed).")
 
-    # Step 2: Parse Dumps with WikiExtractor
-    logger.info("--- Step 2: Parsing Wikipedia Dumps with WikiExtractor ---")
-    if not parse_all_downloaded_dumps():
-        logger.error("Failed to parse all Wikipedia dumps. Aborting pipeline.")
-        return
-    logger.success("Wikipedia dumps parsed successfully.")
+    # # Step 2: Parse Dumps with WikiExtractor
+    # logger.info("--- Step 2: Parsing Wikipedia Dumps with WikiExtractor ---")
+    # if not parse_all_downloaded_dumps():
+    #     logger.error("Failed to parse all Wikipedia dumps. Aborting pipeline.")
+    #     return
+    # logger.success("Wikipedia dumps parsed successfully.")
 
-    # Step 3: Filter Articles for Health Relevance
-    logger.info("--- Step 3: Filtering Wikipedia Articles for Health Relevance ---")
-    if not filter_all_extracted_wikipedia():
-        logger.error("Failed to filter Wikipedia articles or no relevant articles found. Aborting pipeline.")
-        return
-    logger.success("Wikipedia articles filtered successfully.")
+    # # Step 3: Filter Articles for Health Relevance
+    # logger.info("--- Step 3: Filtering Wikipedia Articles for Health Relevance ---")
+    # if not filter_all_extracted_wikipedia():
+    #     logger.error("Failed to filter Wikipedia articles or no relevant articles found. Aborting pipeline.")
+    #     return
+    # logger.success("Wikipedia articles filtered successfully.")
 
     # Step 4: Run BERTopic Training Pipeline (which now includes Stage 1 (optional base) and Stage 2 (final guided))
     logger.info("--- Step 4: Running BERTopic Training Pipeline ---")
