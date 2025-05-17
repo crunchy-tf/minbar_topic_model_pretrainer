@@ -115,7 +115,7 @@ def generate_seed_keywords(health_topics_dict: Dict[str, str],
     logger.info(f"Generated {len(seed_topic_list)} non-empty sets of seed keywords from health_topics_data.py.")
     return seed_topic_list
 
-# --- Train Final Guided Model (on combined multilingual Wikipedia data) ---
+# --- Train Final Guided Model (on combined multilingual Wikipedia data) -
 # Name reverted to original, but behavior changed via run_bertopic_training_pipeline for this test
 def train_final_guided_model(sbert_model: SentenceTransformer, 
                              all_language_documents: List[str], 
